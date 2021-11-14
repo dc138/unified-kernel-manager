@@ -8,6 +8,7 @@
 # Generates both a fallback and normal version if a fallback
 # initramfs is present for that kernel. Uses either /etc/kernel/cmdline
 # or ${boot_dir}/cmdline-${kernel_name} for the kernel's cmdline.
+#
 
 boot_dir=/boot # Directory containing boot files
 esp_dir=/efi # Mountpoint of the efi system partition
