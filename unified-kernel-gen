@@ -1,0 +1,99 @@
+#!/bin/bash
+
+#
+# unified-kernel-gen
+#
+# Automatically generates unified kernel images for installed
+# kernels. Includes both intel and amd microdes in the initrds.
+# Generates both a fallback and normal version if a fallback
+# initramfs is present for that kernel. Uses either /etc/kernel/cmdline
+# or ${boot_dir}/cmdline-${kernel_name} for the kernel's cmdline.
+
+boot_dir=/boot # Directory containing boot files
+esp_dir=/efi # Mountpoint of the efi system partition
+esp_name=Linux # Name of the folder in which to save the unified images
+efi_stub=/usr/lib/systemd/boot/efi/linuxx64.efi.stub # Path to systemd's linux stub
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Please run as root"
+  exit 1
+fi
+
+if [[ ! $1 == "hook" ]]; then
+  echo "Generating unified kernel images"
+fi
+
+mkdir -p ${esp_dir}/EFI/${esp_name}
+mkdir -p ${esp_dir}/EFI/BOOT
+
+for kernel in ${boot_dir}/vmlinuz*; do
+  kernel_name=$(basename ${kernel} | sed 's/vmlinuz-//')
+  echo "  Generating ${kernel_name}"
+
+  initrds="${boot_dir}/initramfs-${kernel_name}.img"
+  initrds_fallback="${boot_dir}/initramfs-${kernel_name}-fallback.img"
+
+  if [[ -f $initrds ]]; then
+    echo "    Found ${initrds}"
+  else
+    echo "    Warning, cannot find ${boot_dir}/initramfs-${kernel_name}.img, trying to generate it using mkinitcpio"
+    mkinitcpio -p ${kernel_name}
+
+      if [[ -f $initrds ]]; then
+        echo "    Found ${initrds}"
+      else
+        echo "    Error, mkinitcpio didn't produce an initramfs image, aborting..."
+        exit 1
+      fi
+  fi
+
+  if [[ -f $initrds_fallback ]]; then
+    echo "    Found ${initrds_fallback}"
+    initrds_fallback_use="true"
+  fi
+
+  if [[ -f "/boot/intel-ucode.img" ]]; then
+    initrds="${initrds} /boot/intel-ucode.img"
+    initrds_fallback="${initrds_fallback} /boot/intel-ucode.img"
+    echo "    Found /boot/intel-ucode.img"
+  fi
+
+  if [[ -f "/boot/amd-ucode.img" ]]; then
+    initrds="${initrds} /boot/amd-ucode.img"
+    initrds_fallback="${initrds_fallback} /boot/amd-ucode.img"
+    echo "    Found /boot/amd-ucode.img"
+  fi
+
+  if [[ -f "${boot_dir}/cmdline-${kernel_name}" ]]; then
+    cmdline="${boot_dir}/cmdline-${kernel_name}"
+    echo "    Found ${cmdline}"
+  elif [[ -f "/etc/kernel/cmdline" ]]; then
+    cmdline=/etc/kernel/cmdline
+    echo "    Found ${cmdline}"
+  else
+    echo "    Error, cannot find cmdline for ${kernel_name}"
+    exit 1
+  fi
+
+  echo "    Writting ${esp_dir}/EFI/${esp_name}/${kernel_name}.efi"
+
+  objcopy \
+    --add-section .osrel="/usr/lib/os-release" --change-section-vma .osrel=0x20000 \
+    --add-section .cmdline="${cmdline}" --change-section-vma .cmdline=0x30000 \
+    --add-section .linux="${kernel}" --change-section-vma .linux=0x40000 \
+    --add-section .initrd=<(cat ${initrds}) --change-section-vma .initrd=0x3000000 \
+    "${efi_stub}" "${esp_dir}/EFI/${esp_name}/${kernel_name}.efi"
+
+  if [[ $initrds_fallback_use == "true" ]]; then
+    echo "    Writting ${esp_dir}/EFI/${esp_name}/${kernel_name}-fallback.efi"
+
+    objcopy \
+      --add-section .osrel="/usr/lib/os-release" --change-section-vma .osrel=0x20000 \
+      --add-section .cmdline="${cmdline}" --change-section-vma .cmdline=0x30000 \
+      --add-section .linux="${kernel}" --change-section-vma .linux=0x40000 \
+      --add-section .initrd=<(cat ${initrds_fallback}) --change-section-vma .initrd=0x3000000 \
+      "${efi_stub}" "${esp_dir}/EFI/${esp_name}/${kernel_name}-fallback.efi"
+  fi
+done
+
+# vim: set filetype=sh

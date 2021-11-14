@@ -1,0 +1,9 @@
+[Trigger]
+Type = Package
+Operation = Remove
+Target = linux*
+
+[Action]
+Description = Removing orphaned unified kernel images
+When = PostTransaction
+Exec = /bin/bash /sbin/unified-kernel-remove hook
