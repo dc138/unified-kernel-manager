@@ -1,0 +1,67 @@
+#!/bin/bash
+
+#
+# unified-kernel-manager
+#
+# Easily and automatically manage unified kernel images through
+# this script and pacman hooks. Can generate and remove kernel
+# images, as well as sign them for secure boot. Available options
+# are:
+#
+#
+# unified-kernel-manager generate
+#
+# Automatically generates unified kernel images for installed
+# kernels. Includes both intel and amd microdes in the initrds.
+# Generates both a fallback and normal version if a fallback
+# initramfs is present for that kernel. Uses either /etc/kernel/cmdline
+# or ${boot_dir}/cmdline-${kernel_name} for the kernel's cmdline.
+#
+#
+# unified-kernel-manager remove <orphaned|all|<name>>
+#
+# Removes orphaned unified kernel images from a system's esp.
+# Can be used with a pacman hook to remove leftover images
+# when you uninstall a kernel to avoid orphaned efi images.
+#
+#
+# unified-kernel-manager create-keys
+#
+# Create secure boot keys in ${key_dir}. Automatically done
+# when trying to sign kernels and they are missing.
+#
+#
+# unified-kernel-manager sign
+#
+# Recursevly signs all efi executables inside ${esp_dir} using
+# the keys located in ${key_dir}.
+#
+#
+# unified-kernel-manager deploy
+#
+# Deploys secure boot keys. Requires firmware to be in setup
+# mode.
+#
+
+# Config options
+
+boot_dir=/boot 
+esp_dir=/efi
+esp_name=Linux
+efi_stub=/usr/lib/systemd/boot/efi/linuxx64.efi.stub
+key_dir=/etc/unified-kernel-manager/keys
+
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Please run as root"
+  exit 1
+fi
+
+mkdir -p ${esp_dir}/EFI/${esp_name}
+mkdir -p ${esp_dir}/EFI/BOOT
+mkdir -p ${key_dir}
+
+case $1 in
+  *)
+    ;;
+esac
