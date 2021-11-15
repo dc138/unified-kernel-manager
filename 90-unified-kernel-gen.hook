@@ -6,9 +6,9 @@ Target = linux*
 Target = *-ucode
 
 [Action]
-Description = Generating unified kernel images
+Description = Generate unified kernel images
 When = PostTransaction
 Depends = mkinitcpio
 Depends = binutils
 Depends = systemd
-Exec = /bin/bash /sbin/unified-kernel-gen hook
+Exec = /bin/bash /sbin/unified-kernel-manager generate

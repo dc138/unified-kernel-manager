@@ -45,7 +45,7 @@
 
 # Config options
 
-boot_dir=/boot 
+boot_dir=/boot
 esp_dir=/efi
 esp_name=Linux
 efi_stub=/usr/lib/systemd/boot/efi/linuxx64.efi.stub
@@ -61,7 +61,149 @@ mkdir -p ${esp_dir}/EFI/${esp_name}
 mkdir -p ${esp_dir}/EFI/BOOT
 mkdir -p ${key_dir}
 
+function print_usage() {
+  echo "  unified-kernel-manager generate"
+  echo "  unified-kernel-manager remove <orphaned|all|<name>>"
+  echo "  unified-kernel-manager create-keys"
+  echo "  unified-kernel-manager sign"
+  echo "  unified-kernel-manager deploy"
+}
+
 case $1 in
+  "help")
+    echo "Available options are:"
+    print_usage
+    ;;
+
+  "generate")
+    echo "Generating unified kernel images"
+
+    for kernel in ${boot_dir}/vmlinuz*; do
+      kernel_name=$(basename ${kernel} | sed 's/vmlinuz-//')
+      echo "  Generating ${kernel_name}"
+
+      initrds="${boot_dir}/initramfs-${kernel_name}.img"
+      initrds_fallback="${boot_dir}/initramfs-${kernel_name}-fallback.img"
+
+      if [[ -f $initrds ]]; then
+        echo "    Found ${initrds}"
+      else
+        echo "    Warning, cannot find ${boot_dir}/initramfs-${kernel_name}.img, trying to generate it using mkinitcpio"
+        mkinitcpio -p ${kernel_name}
+
+          if [[ -f $initrds ]]; then
+            echo "    Found ${initrds}"
+          else
+            echo "    Error, mkinitcpio didn't produce an initramfs image, aborting..."
+            exit 1
+          fi
+      fi
+
+      if [[ -f $initrds_fallback ]]; then
+        echo "    Found ${initrds_fallback}"
+        initrds_fallback_use="true"
+      fi
+
+      if [[ -f "/boot/intel-ucode.img" ]]; then
+        initrds="${initrds} /boot/intel-ucode.img"
+        initrds_fallback="${initrds_fallback} /boot/intel-ucode.img"
+        echo "    Found /boot/intel-ucode.img"
+      fi
+
+      if [[ -f "/boot/amd-ucode.img" ]]; then
+        initrds="${initrds} /boot/amd-ucode.img"
+        initrds_fallback="${initrds_fallback} /boot/amd-ucode.img"
+        echo "    Found /boot/amd-ucode.img"
+      fi
+
+      if [[ -f "${boot_dir}/cmdline-${kernel_name}" ]]; then
+        cmdline="${boot_dir}/cmdline-${kernel_name}"
+        echo "    Found ${cmdline}"
+      elif [[ -f "/etc/kernel/cmdline" ]]; then
+        cmdline=/etc/kernel/cmdline
+        echo "    Found ${cmdline}"
+      else
+        echo "    Error, cannot find cmdline for ${kernel_name}"
+        exit 1
+      fi
+
+      echo "    Writting ${esp_dir}/EFI/${esp_name}/${kernel_name}.efi"
+
+      objcopy \
+        --add-section .osrel="/usr/lib/os-release" --change-section-vma .osrel=0x20000 \
+        --add-section .cmdline="${cmdline}" --change-section-vma .cmdline=0x30000 \
+        --add-section .linux="${kernel}" --change-section-vma .linux=0x40000 \
+        --add-section .initrd=<(cat ${initrds}) --change-section-vma .initrd=0x3000000 \
+        "${efi_stub}" "${esp_dir}/EFI/${esp_name}/${kernel_name}.efi"
+
+      if [[ $initrds_fallback_use == "true" ]]; then
+        echo "    Writting ${esp_dir}/EFI/${esp_name}/${kernel_name}-fallback.efi"
+
+        objcopy \
+          --add-section .osrel="/usr/lib/os-release" --change-section-vma .osrel=0x20000 \
+          --add-section .cmdline="${cmdline}" --change-section-vma .cmdline=0x30000 \
+          --add-section .linux="${kernel}" --change-section-vma .linux=0x40000 \
+          --add-section .initrd=<(cat ${initrds_fallback}) --change-section-vma .initrd=0x3000000 \
+          "${efi_stub}" "${esp_dir}/EFI/${esp_name}/${kernel_name}-fallback.efi"
+      fi
+    done
+    ;;
+
+  "remove")
+    case $2 in
+      "orphaned")
+        echo "Removing orphaned unified kernel images"
+
+        for unified_image in ${esp_dir}/EFI/${esp_name}/linux-*.efi; do
+          kernel_name=$(basename $unified_image | sed 's/\.efi//')
+
+          if [[ $kernel_name =~ "-fallback" ]]; then
+            kernel_name=$(echo ${kernel_name} | sed 's/-fallback//')
+
+            if [[ ! -f "${boot_dir}/initramfs-${kernel_name}-fallback.img" ]] || [[ ! -f "${boot_dir}/vmlinuz-${kernel_name}" ]]; then
+              echo "  Removing orphaned unified image for kernel ${kernel_name}-fallback"
+              rm ${unified_image}
+            else
+              echo "  Found kernel image and initramfs for ${kernel_name}-fallback"
+            fi
+          else
+            if [[ ! -f "${boot_dir}/initramfs-${kernel_name}.img" ]] || [[ ! -f "${boot_dir}/vmlinuz-${kernel_name}" ]]; then
+              echo "  Removing orphaned unified image for kernel ${kernel_name}"
+              rm ${unified_image}
+            else
+              echo "  Found kernel image and initramfs for ${kernel_name}"
+            fi
+          fi
+        done
+        ;;
+
+      "all")
+        echo "Removing all unified kernel images"
+
+        for unified_image in ${esp_dir}/EFI/${esp_name}/linux-*.efi; do
+          kernel_name=$(basename $unified_image | sed 's/\.efi//')
+          echo "  Removing unified kernel image for kernel ${kernel_name}"
+          rm $unified_image
+        done
+        ;;
+
+      *)
+        if [[ -f "${esp_dir}/EFI/${esp_name}/$2.efi" ]]; then
+          echo "Removing unified kernel image for kernel $2"
+          rm ${esp_dir}/EFI/${esp_name}/$2.efi
+        else
+          echo "Kernel image for kernel $2 not found"
+        fi
+
+        ;;
+    esac
+    ;;
+
   *)
+    echo "Invalid usage, please do:"
+    print_usage
+    exit 1
     ;;
 esac
+
+# vim: set filetype=sh
