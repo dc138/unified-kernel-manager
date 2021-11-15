@@ -1,0 +1,13 @@
+[Trigger]
+Type = Package
+Operation = Upgrade
+Operation = Install
+Target = linux*
+Target = *-ucode
+
+[Action]
+Description = Sign unified kernel images and efi executables
+When = PostTransaction
+Depends = binutils
+Depends = sbsigntools
+Exec = /bin/bash /sbin/unified-kernel-manager sign
