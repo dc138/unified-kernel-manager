@@ -5,8 +5,7 @@
 #
 # Easily and automatically manage unified kernel images through
 # this script and pacman hooks. Can generate and remove kernel
-# images, as well as sign them for secure boot. Available options
-# are:
+# images. Available options are:
 #
 #
 # unified-kernel-manager generate
@@ -24,24 +23,6 @@
 # Can be used with a pacman hook to remove leftover images
 # when you uninstall a kernel to avoid orphaned efi images.
 #
-#
-# unified-kernel-manager generate-keys
-#
-# Create secure boot keys in ${key_dir}. Automatically done
-# when trying to sign kernels and they are missing.
-#
-#
-# unified-kernel-manager sign
-#
-# Recursevly signs all efi executables inside ${esp_dir} using
-# the keys located in ${key_dir}.
-#
-#
-# unified-kernel-manager deploy
-#
-# Deploys secure boot keys. Requires firmware to be in setup
-# mode.
-#
 
 # Config options
 
@@ -49,7 +30,6 @@ boot_dir=/boot
 esp_dir=/efi
 esp_name=Linux
 efi_stub=/usr/lib/systemd/boot/efi/linuxx64.efi.stub
-key_dir=/etc/unified-kernel-manager/keys
 
 function error() {
   echo $@
@@ -71,7 +51,6 @@ require_set $boot_dir
 require_set $esp_dir
 require_set $esp_name
 require_set $efi_stub
-require_set $key_dir
 
 if [ "$(id -u)" -ne 0 ]; then
   error "Please run as root"
@@ -79,80 +58,10 @@ fi
 
 mkdir -p ${esp_dir}/EFI/${esp_name}
 mkdir -p ${esp_dir}/EFI/BOOT
-mkdir -p ${key_dir}
 
 function print_usage() {
   echo "  unified-kernel-manager generate"
   echo "  unified-kernel-manager remove <orphaned|all|<name>>"
-  echo "  unified-kernel-manager generate-keys"
-  echo "  unified-kernel-manager sign"
-  echo "  unified-kernel-manager deploy"
-}
-
-function check_keys() {
-  if
-    [[ ! -f ${key_dir}/PK.key   ]] ||
-    [[ ! -f ${key_dir}/KEK.key  ]] ||
-    [[ ! -f ${key_dir}/DB.key   ]] ||
-    [[ ! -f ${key_dir}/PK.cer   ]] ||
-    [[ ! -f ${key_dir}/KEK.cer  ]] ||
-    [[ ! -f ${key_dir}/DB.cer   ]] ||
-    [[ ! -f ${key_dir}/PK.crt   ]] ||
-    [[ ! -f ${key_dir}/KEK.crt  ]] ||
-    [[ ! -f ${key_dir}/DB.crt   ]] ||
-    [[ ! -f ${key_dir}/PK.esl   ]] ||
-    [[ ! -f ${key_dir}/KEK.esl  ]] ||
-    [[ ! -f ${key_dir}/DB.esl   ]] ||
-    [[ ! -f ${key_dir}/PK.auth  ]] ||
-    [[ ! -f ${key_dir}/KEK.auth ]] ||
-    [[ ! -f ${key_dir}/DB.auth  ]] ||
-    [[ ! -f ${key_dir}/GUID.txt ]]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
-function generate_keys() {
-  echo "Generating secure boot keys"
-  rm -f ${key_dir}/*
-
-  2>/dev/null 1>&2 openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Secure Boot PK/" -keyout ${key_dir}/PK.key -out ${key_dir}/PK.crt -days 3650 -nodes -sha256
-  2>/dev/null 1>&2 openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Secure Boot KEK/" -keyout ${key_dir}/KEK.key -out ${key_dir}/KEK.crt -days 3650 -nodes -sha256
-  2>/dev/null 1>&2 openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Secure Boot DB/" -keyout ${key_dir}/DB.key -out ${key_dir}/DB.crt -days 3650 -nodes -sha256
-  2>/dev/null 1>&2 openssl x509 -in ${key_dir}/PK.crt -out ${key_dir}/PK.cer -outform DER
-  2>/dev/null 1>&2 openssl x509 -in ${key_dir}/KEK.crt -out ${key_dir}/KEK.cer -outform DER
-  2>/dev/null 1>&2 openssl x509 -in ${key_dir}/DB.crt -out ${key_dir}/DB.cer -outform DER
-
-  GUID=$(uuidgen -r)
-  echo $GUID > ${key_dir}/GUID.txt
-
-  2>/dev/null 1>&2 cert-to-efi-sig-list -g $GUID ${key_dir}/PK.crt ${key_dir}/PK.esl
-  2>/dev/null 1>&2 cert-to-efi-sig-list -g $GUID ${key_dir}/KEK.crt ${key_dir}/KEK.esl
-  2>/dev/null 1>&2 cert-to-efi-sig-list -g $GUID ${key_dir}/DB.crt ${key_dir}/DB.esl
-
-  2>/dev/null 1>&2 sign-efi-sig-list -t "$(date --date='1 second' +'%Y-%m-%d %H:%M:%S')" -k ${key_dir}/PK.key -c ${key_dir}/PK.crt PK ${key_dir}/PK.esl ${key_dir}/PK.auth
-  2>/dev/null 1>&2 sign-efi-sig-list -t "$(date --date='1 second' +'%Y-%m-%d %H:%M:%S')" -k ${key_dir}/PK.key -c ${key_dir}/PK.crt KEK ${key_dir}/KEK.esl ${key_dir}/KEK.auth
-  2>/dev/null 1>&2 sign-efi-sig-list -t "$(date --date='1 second' +'%Y-%m-%d %H:%M:%S')" -k ${key_dir}/KEK.key -c ${key_dir}/KEK.crt db ${key_dir}/DB.esl ${key_dir}/DB.auth
-
-  chmod 0600 ${key_dir}/*.key
-}
-
-function sign_efis() {
-  echo "Signing efi executables inside ${esp_dir}"
-
-  for executable in $(find ${esp_dir} -type f -iname "*.efi"); do
-    2>/dev/null 1>&2 sbsign --key ${key_dir}/DB.key --cert ${key_dir}/DB.crt --output $executable $executable
-    echo "  Signed ${executable}"
-  done
-}
-
-function verf_efis() {
-  echo "Verifying signatures"
-
-  for executable in $(find ${esp_dir} -type f -iname "*.efi"); do
-    2>/dev/null 1>&2 sbverify $executable --cert ${key_dir}/DB.crt && echo "  Verified signature for ${executable}" || ret_error "  Cannot verify signature for ${executable}"
-  done
 }
 
 case $1 in
@@ -281,16 +190,6 @@ case $1 in
 
         ;;
     esac
-    ;;
-
-  "generate-keys")
-    check_keys && generate_keys || echo "Keys already generated"
-    ;;
-
-  "sign")
-    check_keys && echo "No secure boot keys found" && generate_keys || true
-
-    sign_efis && verf_efis || error "Error signing executables"
     ;;
 
   *)
