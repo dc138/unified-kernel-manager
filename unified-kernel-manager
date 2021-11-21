@@ -147,7 +147,7 @@ case $1 in
       "orphaned")
         echo "Removing orphaned unified kernel images"
 
-        for unified_image in ${esp_dir}/EFI/${esp_name}/linux-*.efi; do
+        for unified_image in ${esp_dir}/EFI/${esp_name}/linux*.efi; do
           kernel_name=$(basename $unified_image | sed 's/\.efi//')
 
           if [[ $kernel_name =~ "-fallback" ]]; then
@@ -173,7 +173,7 @@ case $1 in
       "all")
         echo "Removing all unified kernel images"
 
-        for unified_image in ${esp_dir}/EFI/${esp_name}/linux-*.efi; do
+        for unified_image in ${esp_dir}/EFI/${esp_name}/linux*.efi; do
           kernel_name=$(basename $unified_image | sed 's/\.efi//')
           echo "  Removing unified kernel image for kernel ${kernel_name}"
           rm $unified_image
