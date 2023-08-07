@@ -1,3 +1,9 @@
+This project has been archived.
+
+Please refer to mkinitcpio's built-in unified kernel image generation instead.
+More info at https://wiki.archlinux.org/title/Unified_kernel_image
+
+
 Unified Kernel Image Manager
 ============================
 
